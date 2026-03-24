@@ -42,9 +42,22 @@ def odds_input(label, default_am, default_dec, key_suffix=""):
         val = st.number_input(f"{label} (Decimal)", value=default_dec, step=0.01, format="%.2f", key=f"dec_{key_suffix}")
     return to_decimal(val)
 
-def display_results(promo_stake, hedge_stake, profit, result_dict, conversion_rate=None):
+def display_results(
+    promo_stake,
+    hedge_stake,
+    profit,
+    result_dict,
+    conversion_rate=None,
+    *,
+    outcome_payouts=None,
+):
+    """
+    outcome_payouts: optional list of two dicts with keys:
+      label (str), amount (float), help (optional str) — expected payout from the
+      winning ticket (and related credits where modeled) for each outcome.
+    """
     st.write("---")
-    
+
     if conversion_rate is not None:
         res_col1, res_col2, res_col3, res_col4 = st.columns(4)
         with res_col1:
@@ -63,7 +76,17 @@ def display_results(promo_stake, hedge_stake, profit, result_dict, conversion_ra
             st.metric("Hedge Stake", f"${hedge_stake:,.2f}")
         with res_col3:
             st.metric("Guaranteed Profit", f"${profit:,.2f}")
-            
+
+    if outcome_payouts and len(outcome_payouts) == 2:
+        st.subheader("Expected payout if each side wins")
+        p_col1, p_col2 = st.columns(2)
+        for col, po in zip((p_col1, p_col2), outcome_payouts):
+            with col:
+                lbl = po["label"]
+                amt = po["amount"]
+                h = po.get("help")
+                st.metric(lbl, f"${amt:,.2f}", help=h)
+
     if profit > 0:
         st.success(f"Profitable Arb! Lock in a guaranteed profit of ${profit:,.2f}.")
     elif profit == 0:
@@ -101,10 +124,22 @@ if calc_type == "Profit Boost Arbitrage":
             boost_percentage=boost_percentage
         )
         display_results(
-            promo_stake=result["stake_boost_side"], 
-            hedge_stake=result["stake_hedge_side"], 
-            profit=result["guaranteed_profit"], 
-            result_dict=result
+            promo_stake=result["stake_boost_side"],
+            hedge_stake=result["stake_hedge_side"],
+            profit=result["guaranteed_profit"],
+            result_dict=result,
+            outcome_payouts=[
+                {
+                    "label": "If boosted side wins",
+                    "amount": result["payout_if_boost_wins"],
+                    "help": "Total return from the boosted leg (stake × boosted decimal odds).",
+                },
+                {
+                    "label": "If hedge wins",
+                    "amount": result["payout_if_hedge_wins"],
+                    "help": "Total return from the hedge leg (hedge stake × hedge decimal odds).",
+                },
+            ],
         )
 
 elif calc_type == "Freeplay Maximization":
@@ -129,11 +164,23 @@ elif calc_type == "Freeplay Maximization":
             stake_freeplay=stake_freeplay
         )
         display_results(
-            promo_stake=result["stake_freeplay"], 
-            hedge_stake=result["stake_normal_cash"], 
-            profit=result["guaranteed_profit"], 
+            promo_stake=result["stake_freeplay"],
+            hedge_stake=result["stake_normal_cash"],
+            profit=result["guaranteed_profit"],
             result_dict=result,
-            conversion_rate=result["conversion_rate"]
+            conversion_rate=result["conversion_rate"],
+            outcome_payouts=[
+                {
+                    "label": "If free play wins",
+                    "amount": result["payout_if_fp_wins"],
+                    "help": "Winnings only; the free-play stake is not returned on a win.",
+                },
+                {
+                    "label": "If hedge (cash) wins",
+                    "amount": result["payout_if_normal_wins"],
+                    "help": "Total return from the cash hedge (stake + profit at decimal odds).",
+                },
+            ],
         )
 
 elif calc_type == "Protected Pick Arbitrage":
@@ -164,11 +211,24 @@ elif calc_type == "Protected Pick Arbitrage":
             bonus_refund_rate=refund_rate,
             bonus_conversion=conversion
         )
+        bonus_face = result["if_hedge_wins"]["bonus_earned"]
         display_results(
-            promo_stake=result["stake_no_sweat_cash"], 
-            hedge_stake=result["stake_hedge_cash"], 
-            profit=result["guaranteed_profit"], 
-            result_dict=result
+            promo_stake=result["stake_no_sweat_cash"],
+            hedge_stake=result["stake_hedge_cash"],
+            profit=result["guaranteed_profit"],
+            result_dict=result,
+            outcome_payouts=[
+                {
+                    "label": "If promo / no-sweat wins",
+                    "amount": result["if_no_sweat_wins"]["payout"],
+                    "help": "Cash return from the promo leg (stake × promo decimal odds).",
+                },
+                {
+                    "label": "If hedge wins",
+                    "amount": result["if_hedge_wins"]["payout_cash"],
+                    "help": f"Cash from the hedge only. You may also receive a bonus bet up to ${bonus_face:,.2f} (face value).",
+                },
+            ],
         )
 
 elif calc_type == "Maximize Standard":
@@ -203,10 +263,22 @@ elif calc_type == "Maximize Standard":
                 profit_ratio_rebate_over_normal=profit_ratio
             )
             display_results(
-                promo_stake=result["stake_rebate"], 
-                hedge_stake=result["stake_normal"], 
-                profit=result["guaranteed_profit"], 
-                result_dict=result
+                promo_stake=result["stake_rebate"],
+                hedge_stake=result["stake_normal"],
+                profit=result["guaranteed_profit"],
+                result_dict=result,
+                outcome_payouts=[
+                    {
+                        "label": "If standard (hedge) wins",
+                        "amount": result["payout_if_normal_wins_plus_stake"],
+                        "help": "Cash from the standard ticket plus modeled rebate/free-play credit value when the rebate leg loses.",
+                    },
+                    {
+                        "label": "If rebate side wins",
+                        "amount": result["payout_if_rebate_wins"],
+                        "help": "Total return from the rebate leg (rebate stake × rebate decimal odds).",
+                    },
+                ],
             )
         except Exception as e:
             st.error(f"Error calculating hedge: {e}")
